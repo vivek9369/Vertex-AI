@@ -1,73 +1,85 @@
-import { getModel } from "../config/llmModels.js"
-import { generatePdf } from "../utils/generatePdf.js"
-import { getFromS3 } from "../utils/getFromS3.js"
-import { uploadToS3 } from "../utils/uploadToS3.js"
-import { deductCredits } from "../utils/deductCredits.js"
-import { checkAgentLimit } from "../config/agentLimit.js"
-export const pdfAgent=async (state) => {
-    try {
-        const rate=await checkAgentLimit(state.userId,"pdf")
-        
-        
-        const llm=await getModel("pdf")
-        const prompt=`
-        You are an expert document writer.
+import { getModel }                                               from "../config/llmModels.js"
+import { generatePdf }                                            from "../utils/generatePdf.js"
+import { deductCredits }                                          from "../utils/deductCredits.js"
+import { checkAgentLimit }                                        from "../config/agentLimit.js"
+import { getThreadState, buildThreadContext,
+         buildConversationHistory }                               from "../config/memory.js"
 
-Return ONLY valid JSON.
+export const pdfAgent = async (state) => {
+  try {
+    await checkAgentLimit(state.userId, "pdf")
 
-Do NOT return markdown.
+    // ── Cross-Agent Thread Context ─────────────────────────────────────────
+    const threadState   = await getThreadState(state.conversationId)
+    const threadContext = buildThreadContext(threadState, "pdf")
 
-Do NOT return explanations.
+    // ── Full Conversation History (cross-agent memory) ─────────────────────
+    const history = await buildConversationHistory(state.conversationId)
+
+    const llm = await getModel("pdf")
+
+    const prompt = `You are an expert document writer for VERTEX AI AI platform.
+${threadContext ? "\n" + threadContext + "\n" : ""}
+${history ? "\n" + history + "\n" : ""}
+IMPORTANT: Read the full conversation history above. If the user says "use what we discussed"
+or refers to prior chat content, use that context as the document topic.
+
+Return ONLY valid JSON. Do NOT return markdown or explanations.
 
 Structure:
 
 {
-"title":"",
-"subtitle":"",
-"sections":[
-{
-"heading":"",
-"points":[]
-}
-]
+  "title":    "",
+  "subtitle": "",
+  "sections": [
+    {
+      "heading": "",
+      "points":  []
+    }
+  ]
 }
 
-Generate 4-8 sections.
-
-Each section should have 3-6 concise bullet points.
+Rules:
+- Generate 4-8 sections.
+- Each section should have 3-6 concise bullet points.
+- No markdown, no code blocks, output must start with { and end with }
 
 Topic:
+${state.prompt}`
 
-${state.prompt}
-        `
+    const res  = await llm.invoke(prompt)
 
-        const res=await llm.invoke(prompt)
-        const data=JSON.parse(res.content)
-       await deductCredits(state.userId,"pdf")
-        
-        const pdfBuffer=await generatePdf(data)
+    // ── Strip any markdown code fences the LLM might wrap around the JSON ─
+    const raw  = res.content.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim()
+    const data = JSON.parse(raw)
 
-        const filename=`pdf-${Date.now()}.pdf`
-        await uploadToS3(filename,pdfBuffer,"application/pdf")
+    await deductCredits(state.userId, "pdf")
 
-        const downloadUrl=await getFromS3(filename,24*60)
+    // ── Generate PDF as binary buffer via PDFKit ───────────────────────────
+    const pdfBuffer = await generatePdf(data)
 
-        return {
-          ...state,
-          aiResponse:`# PDF Generated
+    // ── Encode to base64 data URI (no S3 needed) ──────────────────────────
+    const base64    = pdfBuffer.toString("base64")
+    const dataUri   = `data:application/pdf;base64,${base64}`
+
+    return {
+      ...state,
+      aiResponse: `# PDF Generated ✅
 
 **${data.title}**
 
-📥 [Download PDF](${downloadUrl})
+${data.subtitle ? `*${data.subtitle}*\n` : ""}
+📥 [Download PDF](${dataUri})
 
-_Link expires in 10 minutes._`
-        }
-
-    } catch (error) {
-       console.log(error)
-         return {
-            ...state,
-            aiResponse:error?.data?.message || "failed to generate pdf"
-        }
+> _Right-click → "Save link as…" if the browser doesn't download automatically._`,
+      activeAgent: "pdf",
     }
+  } catch (error) {
+    console.error("[pdfAgent]", error)
+    return {
+      ...state,
+      aiResponse:  error?.data?.message || `Failed to generate PDF: ${error?.message || "Unknown error"}`,
+      activeAgent: "pdf",
+    }
+  }
 }

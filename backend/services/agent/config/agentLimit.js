@@ -11,40 +11,41 @@ const Limits = {
 
 export const checkAgentLimit = async (userId, agent) => {
     const max = Limits[agent] || Limits["chat"]
-    const key = `rate:${userId}:${agent}`
-    const count = await redis.incr(key)
-    if (count == 1) {
-        await redis.expire(key, 60)
-    }
 
-    const ttl = await redis.ttl(key)
-
-    if (count > max) {
-        const minutes = Math.floor(ttl / 60)
-        const seconds = (ttl % 60)
-        const time = minutes > 0 ? ` ${minutes}m : ${seconds}s` : `${seconds}s`
-
-        const error = new Error(`Rate limit exceeded for ${agent}.`);
-        error.status = 429
-        error.data = {
-            success: false,
-            agent,
-            limit: max,
-            remainingTime: ttl,
-            retryAfter: time,
-            message: `You have reached the ${agent} limit (${max} requests/minute). Try again in ${time}.`
+    // Gracefully skip rate limiting if Redis is unavailable
+    try {
+        const key   = `rate:${userId}:${agent}`
+        const count = await redis.incr(key)
+        if (count == 1) {
+            await redis.expire(key, 60)
         }
 
-        throw error
-  
-}
+        const ttl = await redis.ttl(key)
 
-return {
-    remaining: max - count,
-    limit: max
- 
-}
-  
+        if (count > max) {
+            const minutes = Math.floor(ttl / 60)
+            const seconds = (ttl % 60)
+            const time = minutes > 0 ? ` ${minutes}m : ${seconds}s` : `${seconds}s`
 
-   
+            const error = new Error(`Rate limit exceeded for ${agent}.`)
+            error.status = 429
+            error.data = {
+                success: false,
+                agent,
+                limit: max,
+                remainingTime: ttl,
+                retryAfter: time,
+                message: `You have reached the ${agent} limit (${max} requests/minute). Try again in ${time}.`
+            }
+            throw error
+        }
+
+        return { remaining: max - count, limit: max }
+    } catch (err) {
+        // Re-throw rate limit errors (they are intentional)
+        if (err.status === 429) throw err
+        // For Redis connection errors, log and allow the request through
+        console.warn(`[agentLimit] Redis unavailable, skipping rate limit for ${agent}:`, err.message)
+        return { remaining: max, limit: max }
+    }
 }

@@ -1,12 +1,11 @@
-import { Code2, FileText, Globe, ImageIcon, MessageSquare, Mic, MicOff, Paperclip, Presentation, Send, X, Zap } from 'lucide-react'
-import React, { useEffect, useState } from 'react'
-import sendMessage from '../features/sendMessage'
+import { Code2, FileText, Globe, MessageSquare, Mic, MicOff, Paperclip, Send, X, Zap } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import sendMessage, { sendMessageStream } from '../features/sendMessage'
 import { useDispatch, useSelector } from 'react-redux'
 import { addMessage, setArtifacts, setIsLoading, setMessages } from '../redux/messageSlice'
 import { createConversation } from '../features/createConversation'
 import { addConversation, setConvTitle, setSelectedConversation } from '../redux/conversationSlice'
 import { updateConversation } from '../features/updateConversation'
-import { useRef } from 'react'
 
 
 function ChatInput() {
@@ -69,42 +68,66 @@ function ChatInput() {
 
 
   const handleSendMessage = async () => {
+    if (!value.trim() && !selectedFile) return
     dispatch(setIsLoading(true))
+
     let conversation = selectedConversation
     if (!conversation) {
       dispatch(setMessages([]))
       const conv = await createConversation()
       dispatch(setSelectedConversation(conv))
-
       dispatch(addConversation(conv))
       conversation = conv
     }
 
-    if (conversation.title == "New Chat") {
+    if (conversation.title === 'New Chat') {
       await updateConversation({ id: conversation?._id, title: value.trim() })
       dispatch(setConvTitle({ conversationId: conversation?._id, title: value.slice(0, 40) }))
     }
 
+    const agentId = selectedAgent.toLowerCase()
+    const prompt  = value.trim()
 
-    console.log(selectedFile)
-    const formData = new FormData()
-    formData.append("prompt", value.trim())
-    formData.append("conversationId", conversation?._id)
-    formData.append("agent", selectedAgent.toLowerCase())
-    if (selectedFile) {
-      formData.append("file", selectedFile)
+    dispatch(addMessage({ role: 'user', content: prompt }))
+    setValue('')
+
+    // ── Chat Agent: use SSE streaming ─────────────────────────────────
+    if (agentId === 'auto' || agentId === 'chat') {
+      dispatch(addMessage({ role: 'assistant', content: '', streaming: true }))
+
+      await sendMessageStream(
+        { prompt, conversationId: conversation?._id },
+        {
+          onToken: (token) => {
+            dispatch({ type: 'message/appendStreamToken', payload: token })
+          },
+          onDone: (result) => {
+            dispatch({ type: 'message/finalizeStream' })
+            dispatch(setArtifacts(result.artifacts || []))
+          },
+          onError: (err) => {
+            console.error('[stream error]', err)
+            dispatch({ type: 'message/finalizeStream' })
+          },
+        }
+      )
+
+    } else {
+      // ── All other agents: standard REST call ───────────────────────
+      const formData = new FormData()
+      formData.append('prompt', prompt)
+      formData.append('conversationId', conversation?._id)
+      formData.append('agent', agentId)
+      if (selectedFile) formData.append('file', selectedFile)
+
+      const data = await sendMessage(formData)
+      setSelectedFile(null)
+      dispatch(setArtifacts(data?.artifacts || []))
+      dispatch(addMessage({ role: 'assistant', content: data?.answer, images: data?.images }))
     }
 
-
-
-    dispatch(addMessage({ role: "user", content: value.trim() }))
-    setValue("")
-    const data = await sendMessage(formData)
     dispatch(setIsLoading(false))
     setSelectedFile(null)
-    dispatch(setArtifacts(data.artifacts || []))
-    dispatch(addMessage({ role: "assistant", content: data?.answer, images: data?.images }))
-    console.log(data)
   }
 
   const agents = [
@@ -133,18 +156,6 @@ function ChatInput() {
     },
 
     {
-      id: "ppt",
-      icon: Presentation,
-      label: "PPT"
-    },
-
-    {
-      id: "vision",
-      icon: ImageIcon,
-      label: "Vision"
-    },
-
-    {
       id: "search",
       icon: Globe,
       label: "Search"
@@ -162,6 +173,7 @@ function ChatInput() {
             const Icon = agent.icon
             return (
               <div
+                key={agent.id}
                 onClick={() => setSelectedAgent(agent.label)}
                 className={`
             flex-shrink-0

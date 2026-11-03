@@ -1,0 +1,56 @@
+{
+  "family": "vertex-kar-agent",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn":      "arn:aws:iam::ACCOUNT_ID:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name":      "vertex-kar-agent",
+      "image":     "ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/vertex-kar-agent:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8003,
+          "protocol":      "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "PORT",          "value": "8003" },
+        { "name": "NODE_ENV",      "value": "production" },
+        { "name": "CHAT_SERVICE",  "value": "http://vertex-kar-chat.vertex-kar.local:8002" },
+        { "name": "AUTH_SERVICE",  "value": "http://vertex-kar-auth.vertex-kar.local:8001" }
+      ],
+      "secrets": [
+        { "name": "MONGODB_URI",       "valueFrom": "arn:aws:ssm:ap-south-1:ACCOUNT_ID:parameter/vertex-kar/MONGODB_URI" },
+        { "name": "REDIS_URL",         "valueFrom": "arn:aws:ssm:ap-south-1:ACCOUNT_ID:parameter/vertex-kar/REDIS_URL" },
+        { "name": "GROQ_API_KEY",      "valueFrom": "arn:aws:ssm:ap-south-1:ACCOUNT_ID:parameter/vertex-kar/GROQ_API_KEY" },
+        { "name": "OPENROUTER_API_KEY","valueFrom": "arn:aws:ssm:ap-south-1:ACCOUNT_ID:parameter/vertex-kar/OPENROUTER_API_KEY" },
+        { "name": "GOOGLE_API_KEY",    "valueFrom": "arn:aws:ssm:ap-south-1:ACCOUNT_ID:parameter/vertex-kar/GOOGLE_API_KEY" },
+        { "name": "TAVILY_API_KEY",    "valueFrom": "arn:aws:ssm:ap-south-1:ACCOUNT_ID:parameter/vertex-kar/TAVILY_API_KEY" },
+        { "name": "AWS_ACCESS_KEY_ID", "valueFrom": "arn:aws:ssm:ap-south-1:ACCOUNT_ID:parameter/vertex-kar/AWS_ACCESS_KEY_ID" },
+        { "name": "AWS_SECRET_KEY",    "valueFrom": "arn:aws:ssm:ap-south-1:ACCOUNT_ID:parameter/vertex-kar/AWS_SECRET_KEY" },
+        { "name": "AWS_BUCKET_NAME",   "valueFrom": "arn:aws:ssm:ap-south-1:ACCOUNT_ID:parameter/vertex-kar/AWS_BUCKET_NAME" },
+        { "name": "QDRANT_API_KEY",    "valueFrom": "arn:aws:ssm:ap-south-1:ACCOUNT_ID:parameter/vertex-kar/QDRANT_API_KEY" },
+        { "name": "QDRANT_URL",        "valueFrom": "arn:aws:ssm:ap-south-1:ACCOUNT_ID:parameter/vertex-kar/QDRANT_URL" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/ecs/vertex-kar-agent",
+          "awslogs-region":        "ap-south-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command":     ["CMD-SHELL", "curl -f http://localhost:8003/ || exit 1"],
+        "interval":    30,
+        "timeout":     5,
+        "retries":     3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}

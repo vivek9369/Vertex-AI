@@ -1,5 +1,4 @@
 import { getModel } from "../config/llmModels.js"
-import { agent } from "../controllers/agent.controller.js"
 
 export const router = async (state) => {
 
@@ -38,8 +37,6 @@ Available agents:
 - search
 - coding
 - pdf
-- ppt
-- vision 
 
 Rules:
 
@@ -67,22 +64,12 @@ pdf:
 Questions about generate PDFs
 or document context.
 
-ppt:
-Questions about generate ppts
-or ppt context.
-
-vision:
-  Generate image,
-  create image
-
 Return ONLY one word:
 
 chat
 search
 coding
 pdf
-ppt
-vision
 
 User Query:
  ${state.prompt}

@@ -54,6 +54,7 @@ function SideBar() {
                         const isActive = selectedConversation?._id == conv?._id
                         return (
                             <div
+                                key={conv?._id || i}
                                 onClick={() => dispatch(setSelectedConversation(conv))}
                                 className={`flex items-center gap-2.5 cursor-pointer mb-0.5 px-3 py-2.5 rounded-[10px] border transition-colors duration-150
                 ${isActive ? "bg-indigo-500/10 border-indigo-500/[0.18]"
@@ -129,7 +130,7 @@ function SideBar() {
                         <X/>
                     </button>
                     <span className='text-[16px] font-semibold text-slate-100 tracking-tight flex-1'>
-                        CortexAI
+                        VERTEX AI
                     </span>
                     <span className='text-[10px] font-medium text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full tracking-wide'>{userData?.plan || "free"}</span>
                     <button className='flex items-center justify-center w-7 h-7 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.05] transition-colors duration-150 bg-transparent border-none cursor-pointer'
@@ -165,6 +166,7 @@ function SideBar() {
                         const isActive = selectedConversation?._id == conv?._id
                         return (
                             <div
+                                key={conv?._id || i}
                                 onClick={() => dispatch(setSelectedConversation(conv))}
                                 className={`flex items-center gap-2.5 cursor-pointer mb-0.5 px-3 py-2.5 rounded-[10px] border transition-colors duration-150
                 ${isActive ? "bg-indigo-500/10 border-indigo-500/[0.18]"

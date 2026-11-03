@@ -1,5 +1,118 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Vertex Kar – Docker Compose (local development + AWS ECS Fargate mirror)
+# ─────────────────────────────────────────────────────────────────────────────
 services:
+
+  # ─── Infrastructure ──────────────────────────────────────────────────────────
+
   redis:
-    image: redis
+    image: redis:7-alpine
+    container_name: vertex-kar-redis
     ports:
-      - 6379:6379
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test:     ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout:  5s
+      retries:  5
+
+  # ─── API Gateway ─────────────────────────────────────────────────────────────
+
+  gateway:
+    build:
+      context:    ./gateway
+      dockerfile: Dockerfile
+    container_name: vertex-kar-gateway
+    ports:
+      - "8000:8000"
+    env_file: ./gateway/.env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - AUTH_SERVICE=http://auth:8001
+      - CHAT_SERVICE=http://chat:8002
+      - AGENT_SERVICE=http://agent:8003
+      - BILLING_SERVICE=http://billing:8004
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ─── Auth Service ─────────────────────────────────────────────────────────
+
+  auth:
+    build:
+      context:    .
+      dockerfile: services/auth/Dockerfile
+    container_name: vertex-kar-auth
+    ports:
+      - "8001:8001"
+    env_file: ./services/auth/.env
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ─── Chat Service ─────────────────────────────────────────────────────────
+
+  chat:
+    build:
+      context:    .
+      dockerfile: services/chat/Dockerfile
+    container_name: vertex-kar-chat
+    ports:
+      - "8002:8002"
+    env_file: ./services/chat/.env
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ─── Agent Service (Vertex Kar AI Engine) ────────────────────────────────
+
+  agent:
+    build:
+      context:    .
+      dockerfile: services/agent/Dockerfile
+    container_name: vertex-kar-agent
+    ports:
+      - "8003:8003"
+    env_file: ./services/agent/.env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - CHAT_SERVICE=http://chat:8002
+      - AUTH_SERVICE=http://auth:8001
+    depends_on:
+      redis:
+        condition: service_healthy
+      chat:
+        condition: service_started
+      auth:
+        condition: service_started
+
+  # ─── Billing Service ─────────────────────────────────────────────────────
+
+  billing:
+    build:
+      context:    .
+      dockerfile: services/billing/Dockerfile
+    container_name: vertex-kar-billing
+    ports:
+      - "8004:8004"
+    env_file: ./services/billing/.env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - AUTH_SERVICE=http://auth:8001
+    depends_on:
+      redis:
+        condition: service_healthy
+      auth:
+        condition: service_started
+
+# ─── Volumes ──────────────────────────────────────────────────────────────────
+
+volumes:
+  redis-data:

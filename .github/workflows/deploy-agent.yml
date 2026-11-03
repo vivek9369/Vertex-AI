@@ -1,0 +1,74 @@
+name: Vertex Kar – Deploy Agent Service to AWS ECS Fargate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/services/agent/**"
+      - "backend/shared/**"
+      - ".github/workflows/deploy-agent.yml"
+
+env:
+  AWS_REGION:         ap-south-1
+  ECR_REPOSITORY:     vertex-kar-agent
+  ECS_SERVICE:        vertex-kar-agent-service
+  ECS_CLUSTER:        vertex-kar-cluster
+  CONTAINER_NAME:     vertex-kar-agent
+  TASK_DEFINITION:    backend/aws/ecs-task-definitions/vertex-kar-agent.json
+
+jobs:
+  build-and-deploy:
+    name: Build → Push ECR → Deploy ECS
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ─────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── AWS credentials ───────────────────────────────────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      # ── Login to ECR ──────────────────────────────────────────────────────────
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── Build Docker image ────────────────────────────────────────────────────
+      - name: Build, tag, and push Docker image to ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG:    ${{ github.sha }}
+        run: |
+          docker build \
+            -f backend/services/agent/Dockerfile \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            ./backend
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      # ── Update ECS task definition ────────────────────────────────────────────
+      - name: Fill in new image ID in ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.TASK_DEFINITION }}
+          container-name:  ${{ env.CONTAINER_NAME }}
+          image:           ${{ steps.build-image.outputs.image }}
+
+      # ── Deploy to ECS Fargate ─────────────────────────────────────────────────
+      - name: Deploy to Amazon ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition:    ${{ steps.task-def.outputs.task-definition }}
+          service:            ${{ env.ECS_SERVICE }}
+          cluster:            ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true

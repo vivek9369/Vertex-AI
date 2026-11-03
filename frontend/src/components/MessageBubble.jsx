@@ -5,7 +5,7 @@ import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-function MessageBubble({ role, content, images }) {
+function MessageBubble({ role, content, images, streaming }) {
   const isUser = role === "user"
   const [lightBox, setLightBox] = useState(null)
   const [copiedCode, setCopiedCode] = useState("")
@@ -180,7 +180,21 @@ function MessageBubble({ role, content, images }) {
           {content}
         </Markdown>
 
-
+        {/* Streaming cursor */}
+        {streaming && (
+          <span
+            style={{
+              display:         'inline-block',
+              width:           '2px',
+              height:          '1em',
+              background:      'currentColor',
+              marginLeft:      '2px',
+              verticalAlign:   'text-bottom',
+              animation:       'blink 0.8s step-start infinite',
+            }}
+          />
+        )}
+        <style>{`@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }`}</style>
 
       </div>
       {lightBox &&

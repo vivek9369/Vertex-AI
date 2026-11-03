@@ -1,9 +1,13 @@
-import express from "express"
-import { agent } from "../controllers/agent.controller.js"
-import multer from "../config/multer.js"
+import express                   from "express"
+import { agent, agentStream }    from "../controllers/agent.controller.js"
+import multer                    from "../config/multer.js"
 
-const router=express.Router()
+const router = express.Router()
 
-router.post("/chat",multer.single("file"),agent)
+// Standard (non-streaming) agent handler – all agents
+router.post("/chat",   multer.single("file"), agent)
 
-export default router
+// SSE token-streaming handler – Chat Agent only
+router.post("/stream", express.json(), agentStream)
+
+export default router
